@@ -1,0 +1,159 @@
+close all
+clear all
+clc
+
+%% User input for the image filename
+imageFilename = input('Enter the image filename (e.g., "ROSE.jpg"): ', 's');
+inImage = imread(imageFilename);
+
+% Check if the image is already grayscale
+if size(inImage, 3) == 3
+    inImage = rgb2gray(inImage);
+end
+
+% User input for the range of singular values
+startN = input('Enter the starting number of singular values: ');
+stepN = input('Enter the step size for singular values: ');
+endN = input('Enter the ending number of singular values: ');
+
+% Perform the SVD and compression using the user-defined range
+inImageD = double(inImage);
+[U, S, V] = svd(inImageD);
+
+dispEr = [];
+numSVals = [];
+
+%% MSE
+for N = startN:stepN:endN
+    % store the singular values in a temporary var
+    C = S;
+    
+    % discard the diagonal values not required for compression
+    C(N+1:end, :) = 0;
+    C(:, N+1:end) = 0;
+    
+    % Construct an Image using the selected singular values
+    D = U * C * V';
+    
+    % display and compute error
+    figure;
+    buffer = sprintf('Image output using %d singular values:', N);
+    imshow(uint8(D));
+    imwrite(uint8(D), sprintf('%dbw.jpg', N));
+    title(buffer);
+    
+    % Add a pause to allow MATLAB to render the figure
+    pause(0.1);
+    % Add a pause to allow MATLAB to render the figure
+    %pause(0.1);
+    
+    error = immse(uint8(D), inImage);
+    
+    % store vals for display
+    dispEr = [dispEr; error];
+    numSVals = [numSVals; N];
+
+    
+    %error = immse(uint8(D), inImage)
+   
+    % Print the error for Lloyd-Max Quantization
+    fprintf('MSE Error for SVD with %d singular values: %f\n', N, error);
+end
+
+
+
+% display the error graph
+%figure;
+%title('Error in compression');
+%plot(numSVals, dispEr);
+%grid on
+%xlabel('Number of Singular Values used');
+%ylabel('Error between compress and original image');
+
+figure;
+scatter(dispEr, 1./dispEr); % Accuracy is represented as the reciprocal of MSE
+title('Accuracy vs. MSE for SVD Compression');
+xlabel('Mean Squared Error (MSE)');
+ylabel('Accuracy (1/MSE)');
+grid on;
+
+
+%% Lloyd-Max Quantization
+
+for N = startN:stepN:endN
+    % store the singular values in a temporary var
+    C = S;
+    
+    % discard the diagonal values not required for compression
+    C(N+1:end, :) = 0;
+    C(:, N+1:end) = 0;
+    
+    % Construct an Image using the selected singular values
+    D = U * C * V';
+    
+    % Flatten the image matrix
+    D_flatten = D(:);
+    
+    % Lloyd-Max Quantization using manual k-means
+    codebookSize = 16; % Adjust the codebook size based on your preference
+    
+    % Initialize centroids randomly
+    centroids = D_flatten(randperm(numel(D_flatten), codebookSize));
+    
+    % Maximum number of iterations
+    maxIterations = 100;
+    
+    for iter = 1:maxIterations
+        % Manually compute Euclidean distance
+        distances = zeros(size(D_flatten, 1), codebookSize);
+        for i = 1:codebookSize
+            distances(:, i) = sqrt(sum((D_flatten - centroids(i)).^2, 2));
+        end
+        
+        % Assign each element to the nearest centroid
+        [~, idx] = min(distances, [], 2);
+        
+        % Update centroids based on the mean of assigned points
+        for i = 1:codebookSize
+            centroids(i) = mean(D_flatten(idx == i));
+        end
+    end
+    
+    % Quantize the image
+    quantizedImage = reshape(centroids(idx), size(D));
+
+    % display and compute error
+    figure;
+    buffer = sprintf('Image output using %d singular values (SVD + Quantization):', N);
+    imshow(uint8(quantizedImage));
+    imwrite(uint8(quantizedImage), sprintf('%dquantized.jpg', N));
+    title(buffer);
+    
+    % Add a pause to allow MATLAB to render the figure
+    pause(0.1);
+    
+    error = immse(uint8(quantizedImage), inImage);
+    
+    % store vals for display
+    dispEr = [dispEr; error];
+    numSVals = [numSVals; N];
+
+    % Print the error for Lloyd-Max Quantization
+    fprintf('MSE Error for Lloyd-Max Quantization with %d singular values: %f\n', N, error);
+end
+
+%display the error graph
+%figure;
+%title('Error in compression');
+%plot(numSVals, dispEr);
+%grid on
+%xlabel('Number of Singular Values used');
+%ylabel('Error between compress and original image');
+
+% Scatter plot for Lloyd-Max Quantization
+figure;
+scatter(dispEr, 1./dispEr); % Accuracy is represented as the reciprocal of MSE
+title('Accuracy vs. MSE for Lloyd-Max Quantization');
+xlabel('Mean Squared Error (MSE)');
+ylabel('Accuracy (1/MSE)');
+grid on;
